@@ -1,5 +1,11 @@
+from typing import List, Dict
 
-def parse_cfg(cfg_file):
+import torch
+import torch.nn as nn
+
+
+
+def parse_cfg(cfg_file: str) -> List[Dict]:
     """
     Takes a configuration file
 
@@ -32,6 +38,12 @@ def parse_cfg(cfg_file):
 
                 block[key] = value
         return blocks
+
+
+def create_modules(blocks: List[Dict]):
+    net_info = blocks[0]
+    module_list = nn.ModuleList()
+
 
 if __name__ == '__main__':
     print(parse_cfg('../cfg/yolov3.cfg'))
