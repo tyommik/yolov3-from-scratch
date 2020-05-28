@@ -1,8 +1,10 @@
-from typing import List, Dict
+from typing import List, Tuple, Dict
 from collections import OrderedDict
 
 import torch
 import torch.nn as nn
+
+from utils import predict_transform
 
 
 def parse_cfg(cfg_file: str) -> List[Dict]:
@@ -54,6 +56,7 @@ class EmptyLayer(nn.Module):
 class DetectionLayer(nn.Module):
     def __init__(self, anchors):
         super(DetectionLayer, self).__init__()
+        self.anchors = anchors
 
 
 def conv_bn(index, in_channels, out_channels, conv, activation, use_batchnorm=True, *args, **kwargs) -> nn.Sequential:
@@ -83,7 +86,7 @@ def conv_bn(index, in_channels, out_channels, conv, activation, use_batchnorm=Tr
         }))
 
 
-def create_modules(blocks: List[Dict]):
+def create_modules(blocks: List[Dict]) -> Tuple[Dict, nn.Module]:
     net_info = blocks[0]
     module_list = nn.ModuleList()
     prev_filter = 3 # 3 - number of channels for images (RGB)
@@ -149,18 +152,73 @@ def create_modules(blocks: List[Dict]):
 
             detection = DetectionLayer(anchors=anchors)
             module.add_module(f'YOLO_{layer_idx}', detection)
+        else:
+            raise NotImplementedError
 
         module_list.append(module)
-        prev_filters = filters
+        prev_filter = filters
         output_filters.append(filters)
 
     return net_info, module_list
 
 
+class Darknet(nn.Module):
+    def __init__(self, cfg):
+        super().__init__()
+        self.blocks = parse_cfg(cfg)
+        self.net_info, self.module_list = create_modules(self.blocks)
 
+    def forward(self, x):
+        modules = self.blocks[1:]
+        outputs = {} # We cache the outputs for the route layer
+        write = 0
+        for module_idx, module in enumerate(modules):
+            module_type = module['type']
+            if module_type == 'convolutional' or module_type == 'upsample':
+                x = self.module_list[module_idx](x)
+            elif module_type == 'route':
+                layers = module['layers']
+                if isinstance(layers, list):
+                    if layers[0] < 0:
+                        layers[0] += module_idx
+                    map1 = outputs[layers[0]]
+                    map2 = outputs[layers[1]]
+
+                    x = torch.cat((map1, map2), 1)
+
+                else:
+                    x = outputs[module_idx + layers]
+
+            elif module_type == 'shortcut':
+                map_from = outputs[module_idx + module['from']]
+                map_prev = outputs[module_idx - 1]
+                x = map_prev + map_from
+
+            elif module_type == 'yolo':
+                anchors = self.module_list[module_idx][0].anchors
+                # get dim
+                input_dim = self.net_info['height']
+
+                # get number of classes
+                num_classes = module['classes']
+
+                # transform
+                x = x.data
+                x = predict_transform(x, input_dim, anchors, num_classes, CUDA=True)
+
+                raise NotImplementedError
+
+            else:
+                # so that's a detection layer
+                detections = torch.cat((detections, x), 1)
+
+            outputs[module_idx] = x
+
+        return x
 
 
 if __name__ == '__main__':
     blocks = parse_cfg('../cfg/yolov3.cfg')
-    create_modules(blocks)
-    print()
+    a = create_modules(blocks)
+    model = Darknet(cfg='../cfg/yolov3.cfg')
+    print(model(torch.ones(1, 3, 416, 416)))
