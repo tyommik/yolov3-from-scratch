@@ -174,7 +174,7 @@ class Darknet(nn.Module):
     def forward(self, x):
         modules = self.blocks[1:]
         outputs = {} # We cache the outputs for the route layer
-        write = 0
+        write = False
         for module_idx, module in enumerate(modules):
             module_type = module['type']
             if module_type == 'convolutional' or module_type == 'upsample':
@@ -210,11 +210,13 @@ class Darknet(nn.Module):
                 x = x.data
                 x = predict_transform(x, input_height, input_width, anchors, num_classes, CUDA=False)
 
-                raise NotImplementedError
+                if not write:
+                    detections = x
+                    write = True
 
-            else:
-                # so that's a detection layer
-                detections = torch.cat((detections, x), 1)
+                else:
+                    # so that's a detection layer
+                    detections = torch.cat((detections, x), 1)
 
             outputs[module_idx] = x
 

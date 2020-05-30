@@ -72,7 +72,7 @@ def predict_transform(prediction, input_height, input_width, anchors, num_classe
     # pred of class
     prediction[:, :, 5: 5 + num_classes] = torch.sigmoid((prediction[:, :, 5: 5 + num_classes]))
 
-    # real size
+    # resize the detections map to the size of the input image
     prediction[:, :, :4] *= stride
 
     return prediction
