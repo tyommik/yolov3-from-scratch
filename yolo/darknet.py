@@ -2,6 +2,7 @@ from typing import List, Tuple, Dict
 from collections import OrderedDict
 
 import cv2
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -238,6 +239,86 @@ class Darknet(nn.Module):
 
         return detections
 
+    def load_weights(self, weights_file):
+        fp = open(weights_file, "rb")
+
+        # The first 5 values are header information
+        # 1. Major version number
+        # 2. Minor Version Number
+        # 3. Subversion number
+        # 4,5. Images seen by the network (during training)
+        header = np.fromfile(fp, dtype=np.int32, count=5)
+        weights = np.fromfile(fp, dtype = np.float32)
+
+        ptr = 0
+        for i in range(len(self.module_list)):
+            layer = self.blocks[1:][i]
+            if layer['type'] == 'convolutional':
+                model = self.module_list[i]
+
+                batch_normalize = False
+                bias = True
+                if layer.get('batch_normalize'):
+                    batch_normalize = True
+                    bias = False
+
+                conv = model[0]
+                if batch_normalize:
+                    bn = model[1]
+                    # Get the number of weights of Batch Norm Layer
+                    num_bn_biases = bn.bias.numel()
+
+                    bn_biases = torch.tensor(weights[ptr: ptr + num_bn_biases])
+                    ptr += num_bn_biases
+
+                    bn_weights = torch.tensor(weights[ptr: ptr + num_bn_biases])
+                    ptr += num_bn_biases
+
+                    bn_running_mean = torch.tensor(weights[ptr: ptr + num_bn_biases])
+                    ptr += num_bn_biases
+
+                    bn_running_var = torch.tensor(weights[ptr: ptr + num_bn_biases])
+                    ptr += num_bn_biases
+
+                    bn_biases = bn_biases.reshape_as(bn.bias.data)
+                    bn_weights = bn_weights.reshape_as(bn.weight.data)
+                    bn_running_mean = bn_running_mean.reshape_as(bn.running_mean)
+                    bn_running_var = bn_running_var.reshape_as(bn.running_var)
+
+                    bn.bias.data.copy_(bn_biases)
+                    bn.weight.data.copy_(bn_weights)
+                    bn.running_mean.copy_(bn_running_mean)
+                    bn.running_var.copy_(bn_running_var)
+
+                else:
+                    num_biases = conv.bias.numel()
+
+                    # Load the weights
+                    conv_biases = torch.tensor(weights[ptr: ptr + num_biases])
+                    ptr += num_biases
+
+                    # reshape the loaded weights according to the dims of the model weights
+                    conv_biases = conv_biases.reshape_as(conv.bias.data)
+
+                    # Finally copy the data
+                    conv.bias.data.copy_(conv_biases)
+
+                # Let us load the weights for the Convolutional layers
+                num_weights = conv.weight.numel()
+
+                # Do the same as above for weights
+                conv_weights = torch.tensor(weights[ptr:ptr + num_weights])
+                ptr = ptr + num_weights
+
+                conv_weights = conv_weights.view_as(conv.weight.data)
+                conv.weight.data.copy_(conv_weights)
+
+
+
 
 if __name__ == '__main__':
     get_test_image('dog-cycle-car.png')
+    model = Darknet(cfg='cfg/yolov3.cfg')
+    model.load_weights("yolov3.weights")
+    pred = model(torch.ones(1, 3, 416, 416))
+    print(pred)
