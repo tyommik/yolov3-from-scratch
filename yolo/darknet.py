@@ -1,6 +1,8 @@
 from typing import List, Tuple, Dict
 from collections import OrderedDict
 
+import cv2
+
 import torch
 import torch.nn as nn
 
@@ -120,7 +122,7 @@ def create_modules(blocks: List[Dict]) -> Tuple[Dict, nn.Module]:
 
         elif layer['type'] == 'upsample':
             stride = layer['stride']
-            upsample = nn.Upsample(scale_factor=2, mode='bilinear')
+            upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
             module = nn.Sequential(OrderedDict({
                 f'updample_{layer_idx}': upsample
             }))
@@ -164,6 +166,19 @@ def create_modules(blocks: List[Dict]) -> Tuple[Dict, nn.Module]:
         output_filters.append(filters)
 
     return net_info, module_list
+
+
+def get_test_image(img_path: str) -> None:
+    img = cv2.imread(img_path)
+    img = cv2.resize(img, (416, 416))
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = img / 255.0
+    img = torch.tensor(img).permute(2, 0, 1).unsqueeze(0).float()
+
+    model = Darknet(cfg='cfg/yolov3.cfg')
+    pred = model(img)
+    assert pred.shape == (1, 10647, 85)
+    print('Test DONE')
 
 
 class Darknet(nn.Module):
@@ -221,11 +236,8 @@ class Darknet(nn.Module):
 
             outputs[module_idx] = x
 
-        return x
+        return detections
 
 
 if __name__ == '__main__':
-    blocks = parse_cfg('../cfg/yolov3.cfg')
-    a = create_modules(blocks)
-    model = Darknet(cfg='../cfg/yolov3.cfg')
-    print(model(torch.ones(1, 3, 608, 608)))
+    get_test_image('dog-cycle-car.png')
