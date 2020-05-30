@@ -39,6 +39,7 @@ def parse_cfg(cfg_file: str) -> List[Dict]:
                         value = value[0]
 
                 block[key] = value
+        blocks.append(block)
         return blocks
 
 
