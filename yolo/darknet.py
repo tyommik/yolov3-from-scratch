@@ -114,6 +114,9 @@ def create_modules(blocks: List[Dict]) -> Tuple[Dict, nn.Module]:
                               stride=stride)
             module = conv_bn(layer_idx, prev_filter, filters, conv, activation=nn.LeakyReLU, use_batchnorm=batch_normalize)
 
+        elif layer['type'] == 'maxpool':
+            raise NotImplementedError
+
         elif layer['type'] == 'upsample':
             stride = layer['stride']
             upsample = nn.Upsample(scale_factor=2, mode='bilinear')
@@ -197,14 +200,15 @@ class Darknet(nn.Module):
             elif module_type == 'yolo':
                 anchors = self.module_list[module_idx][0].anchors
                 # get dim
-                input_dim = self.net_info['height']
+                input_height = self.net_info['height']
+                input_width = self.net_info['width']
 
                 # get number of classes
                 num_classes = module['classes']
 
                 # transform
                 x = x.data
-                x = predict_transform(x, input_dim, anchors, num_classes, CUDA=True)
+                x = predict_transform(x, input_height, input_width, anchors, num_classes, CUDA=False)
 
                 raise NotImplementedError
 
@@ -221,4 +225,4 @@ if __name__ == '__main__':
     blocks = parse_cfg('../cfg/yolov3.cfg')
     a = create_modules(blocks)
     model = Darknet(cfg='../cfg/yolov3.cfg')
-    print(model(torch.ones(1, 3, 416, 416)))
+    print(model(torch.ones(1, 3, 608, 608)))
